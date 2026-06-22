@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { orderAPI, paymentAPI, notificationAPI } from '../services/api';
+import { orderAPI, paymentAPI } from '../services/api';
 import Navbar from '../components/Navbar';
 
 export default function Cart() {
