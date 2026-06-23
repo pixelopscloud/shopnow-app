@@ -3,33 +3,123 @@ name: CI Pipeline
 on:
   push:
     branches: [main, staging]
+    paths:
+      - 'services/user-service/**'
+      - 'services/product-service/**'
+      - 'services/order-service/**'
+      - 'services/payment-service/**'
+      - 'services/notification-service/**'
+      - 'frontend/**'
 
 jobs:
-  security-scan:
+  detect-changes:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        service: [user-service, product-service, order-service, payment-service, notification-service]
+    outputs:
+      user-service: ${{ steps.filter.outputs.user-service }}
+      product-service: ${{ steps.filter.outputs.product-service }}
+      order-service: ${{ steps.filter.outputs.order-service }}
+      payment-service: ${{ steps.filter.outputs.payment-service }}
+      notification-service: ${{ steps.filter.outputs.notification-service }}
+      frontend: ${{ steps.filter.outputs.frontend }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Run Trivy vulnerability scan
+      - name: Detect changed services
+        uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            user-service:
+              - 'services/user-service/**'
+            product-service:
+              - 'services/product-service/**'
+            order-service:
+              - 'services/order-service/**'
+            payment-service:
+              - 'services/payment-service/**'
+            notification-service:
+              - 'services/notification-service/**'
+            frontend:
+              - 'frontend/**'
+
+  security-scan:
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: |
+      needs.detect-changes.outputs.user-service == 'true' ||
+      needs.detect-changes.outputs.product-service == 'true' ||
+      needs.detect-changes.outputs.order-service == 'true' ||
+      needs.detect-changes.outputs.payment-service == 'true' ||
+      needs.detect-changes.outputs.notification-service == 'true' ||
+      needs.detect-changes.outputs.frontend == 'true'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Scan user-service
+        if: needs.detect-changes.outputs.user-service == 'true'
         uses: aquasecurity/trivy-action@master
         with:
           scan-type: 'fs'
-          scan-ref: './services/${{ matrix.service }}'
+          scan-ref: './services/user-service'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '0'
+          format: 'table'
+
+      - name: Scan product-service
+        if: needs.detect-changes.outputs.product-service == 'true'
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: './services/product-service'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '0'
+          format: 'table'
+
+      - name: Scan order-service
+        if: needs.detect-changes.outputs.order-service == 'true'
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: './services/order-service'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '0'
+          format: 'table'
+
+      - name: Scan payment-service
+        if: needs.detect-changes.outputs.payment-service == 'true'
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: './services/payment-service'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '0'
+          format: 'table'
+
+      - name: Scan notification-service
+        if: needs.detect-changes.outputs.notification-service == 'true'
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: './services/notification-service'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '0'
+          format: 'table'
+
+      - name: Scan frontend
+        if: needs.detect-changes.outputs.frontend == 'true'
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: './frontend'
           severity: 'CRITICAL,HIGH'
           exit-code: '0'
           format: 'table'
 
   build-and-push:
     runs-on: ubuntu-latest
-    needs: security-scan
-    strategy:
-      matrix:
-        service: [user-service, product-service, order-service, payment-service, notification-service]
-
+    needs: [detect-changes, security-scan]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -43,43 +133,55 @@ jobs:
       - name: Set image tag
         id: tag
         run: |
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
           if [ "${{ github.ref_name }}" == "main" ]; then
-            echo "tag=latest" >> $GITHUB_OUTPUT
+            echo "tag=$SHORT_SHA" >> $GITHUB_OUTPUT
           else
-            echo "tag=staging" >> $GITHUB_OUTPUT
+            echo "tag=staging-$SHORT_SHA" >> $GITHUB_OUTPUT
           fi
 
-      - name: Build and Push ${{ matrix.service }}
+      - name: Build and Push user-service
+        if: needs.detect-changes.outputs.user-service == 'true'
         uses: docker/build-push-action@v5
         with:
-          context: ./services/${{ matrix.service }}
+          context: ./services/user-service
           push: true
-          tags: pixelopscloud/shopnow-${{ matrix.service }}:${{ steps.tag.outputs.tag }}
+          tags: pixelopscloud/shopnow-user-service:${{ steps.tag.outputs.tag }}
 
-  build-frontend:
-    runs-on: ubuntu-latest
-    needs: security-scan
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Login to Docker Hub
-        uses: docker/login-action@v3
+      - name: Build and Push product-service
+        if: needs.detect-changes.outputs.product-service == 'true'
+        uses: docker/build-push-action@v5
         with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
+          context: ./services/product-service
+          push: true
+          tags: pixelopscloud/shopnow-product-service:${{ steps.tag.outputs.tag }}
 
-      - name: Set image tag
-        id: tag
-        run: |
-          if [ "${{ github.ref_name }}" == "main" ]; then
-            echo "tag=latest" >> $GITHUB_OUTPUT
-          else
-            echo "tag=staging" >> $GITHUB_OUTPUT
-          fi
+      - name: Build and Push order-service
+        if: needs.detect-changes.outputs.order-service == 'true'
+        uses: docker/build-push-action@v5
+        with:
+          context: ./services/order-service
+          push: true
+          tags: pixelopscloud/shopnow-order-service:${{ steps.tag.outputs.tag }}
 
-      - name: Build and Push Frontend
+      - name: Build and Push payment-service
+        if: needs.detect-changes.outputs.payment-service == 'true'
+        uses: docker/build-push-action@v5
+        with:
+          context: ./services/payment-service
+          push: true
+          tags: pixelopscloud/shopnow-payment-service:${{ steps.tag.outputs.tag }}
+
+      - name: Build and Push notification-service
+        if: needs.detect-changes.outputs.notification-service == 'true'
+        uses: docker/build-push-action@v5
+        with:
+          context: ./services/notification-service
+          push: true
+          tags: pixelopscloud/shopnow-notification-service:${{ steps.tag.outputs.tag }}
+
+      - name: Build and Push frontend
+        if: needs.detect-changes.outputs.frontend == 'true'
         uses: docker/build-push-action@v5
         with:
           context: ./frontend
@@ -88,25 +190,125 @@ jobs:
 
   image-scan:
     runs-on: ubuntu-latest
-    needs: [build-and-push, build-frontend]
-    strategy:
-      matrix:
-        service: [user-service, product-service, order-service, payment-service, notification-service, frontend]
-
+    needs: [detect-changes, build-and-push]
     steps:
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
       - name: Set image tag
         id: tag
         run: |
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
           if [ "${{ github.ref_name }}" == "main" ]; then
-            echo "tag=latest" >> $GITHUB_OUTPUT
+            echo "tag=$SHORT_SHA" >> $GITHUB_OUTPUT
           else
-            echo "tag=staging" >> $GITHUB_OUTPUT
+            echo "tag=staging-$SHORT_SHA" >> $GITHUB_OUTPUT
           fi
 
-      - name: Scan Docker image with Trivy
+      - name: Scan user-service image
+        if: needs.detect-changes.outputs.user-service == 'true'
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: pixelopscloud/shopnow-${{ matrix.service }}:${{ steps.tag.outputs.tag }}
+          image-ref: pixelopscloud/shopnow-user-service:${{ steps.tag.outputs.tag }}
           severity: 'CRITICAL,HIGH'
           exit-code: '0'
           format: 'table'
+
+      - name: Scan product-service image
+        if: needs.detect-changes.outputs.product-service == 'true'
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: pixelopscloud/shopnow-product-service:${{ steps.tag.outputs.tag }}
+          severity: 'CRITICAL,HIGH'
+          exit-code: '0'
+          format: 'table'
+
+      - name: Scan order-service image
+        if: needs.detect-changes.outputs.order-service == 'true'
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: pixelopscloud/shopnow-order-service:${{ steps.tag.outputs.tag }}
+          severity: 'CRITICAL,HIGH'
+          exit-code: '0'
+          format: 'table'
+
+      - name: Scan payment-service image
+        if: needs.detect-changes.outputs.payment-service == 'true'
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: pixelopscloud/shopnow-payment-service:${{ steps.tag.outputs.tag }}
+          severity: 'CRITICAL,HIGH'
+          exit-code: '0'
+          format: 'table'
+
+      - name: Scan notification-service image
+        if: needs.detect-changes.outputs.notification-service == 'true'
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: pixelopscloud/shopnow-notification-service:${{ steps.tag.outputs.tag }}
+          severity: 'CRITICAL,HIGH'
+          exit-code: '0'
+          format: 'table'
+
+      - name: Scan frontend image
+        if: needs.detect-changes.outputs.frontend == 'true'
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: pixelopscloud/shopnow-frontend:${{ steps.tag.outputs.tag }}
+          severity: 'CRITICAL,HIGH'
+          exit-code: '0'
+          format: 'table'
+
+  update-infra:
+    runs-on: ubuntu-latest
+    needs: [detect-changes, build-and-push]
+    if: github.ref_name == 'main'
+    steps:
+      - name: Checkout infra repo
+        uses: actions/checkout@v4
+        with:
+          repository: pixelopscloud/shopnow-infra
+          token: ${{ secrets.GH_TOKEN }}
+          path: shopnow-infra
+
+      - name: Set image tag
+        id: tag
+        run: |
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          echo "tag=$SHORT_SHA" >> $GITHUB_OUTPUT
+
+      - name: Update user-service image tag
+        if: needs.detect-changes.outputs.user-service == 'true'
+        run: sed -i "s/tag: .*/tag: \"${{ steps.tag.outputs.tag }}\"/" shopnow-infra/helm/user-service/values.yaml
+
+      - name: Update product-service image tag
+        if: needs.detect-changes.outputs.product-service == 'true'
+        run: sed -i "s/tag: .*/tag: \"${{ steps.tag.outputs.tag }}\"/" shopnow-infra/helm/product-service/values.yaml
+
+      - name: Update order-service image tag
+        if: needs.detect-changes.outputs.order-service == 'true'
+        run: sed -i "s/tag: .*/tag: \"${{ steps.tag.outputs.tag }}\"/" shopnow-infra/helm/order-service/values.yaml
+
+      - name: Update payment-service image tag
+        if: needs.detect-changes.outputs.payment-service == 'true'
+        run: sed -i "s/tag: .*/tag: \"${{ steps.tag.outputs.tag }}\"/" shopnow-infra/helm/payment-service/values.yaml
+
+      - name: Update notification-service image tag
+        if: needs.detect-changes.outputs.notification-service == 'true'
+        run: sed -i "s/tag: .*/tag: \"${{ steps.tag.outputs.tag }}\"/" shopnow-infra/helm/notification-service/values.yaml
+
+      - name: Update frontend image tag
+        if: needs.detect-changes.outputs.frontend == 'true'
+        run: sed -i "s/tag: .*/tag: \"${{ steps.tag.outputs.tag }}\"/" shopnow-infra/helm/frontend/values.yaml
+
+      - name: Commit and push infra repo
+        run: |
+          cd shopnow-infra
+          git config user.email "ci@shopnow.com"
+          git config user.name "CI Bot"
+          git add .
+          git diff --staged --quiet || git commit -m "ci: update image tags to ${{ steps.tag.outputs.tag }}"
+          git push
