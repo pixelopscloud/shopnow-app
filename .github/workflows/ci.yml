@@ -2,39 +2,67 @@ name: CI Pipeline
 
 on:
   push:
-    branches: [main]
+    branches: [main, staging]
 
 jobs:
+  security-scan:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [user-service, product-service, order-service, payment-service, notification-service]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Trivy vulnerability scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: './services/${{ matrix.service }}'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '0'
+          format: 'table'
+
   build-and-push:
     runs-on: ubuntu-latest
-
+    needs: security-scan
     strategy:
       matrix:
         service: [user-service, product-service, order-service, payment-service, notification-service]
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Login to Docker Hub
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Set image tag
+        id: tag
+        run: |
+          if [ "${{ github.ref_name }}" == "main" ]; then
+            echo "tag=latest" >> $GITHUB_OUTPUT
+          else
+            echo "tag=staging" >> $GITHUB_OUTPUT
+          fi
 
       - name: Build and Push ${{ matrix.service }}
         uses: docker/build-push-action@v5
         with:
           context: ./services/${{ matrix.service }}
           push: true
-          tags: pixelopscloud/shopnow-${{ matrix.service }}:latest
+          tags: pixelopscloud/shopnow-${{ matrix.service }}:${{ steps.tag.outputs.tag }}
 
   build-frontend:
     runs-on: ubuntu-latest
+    needs: security-scan
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Login to Docker Hub
         uses: docker/login-action@v3
@@ -42,9 +70,43 @@ jobs:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
+      - name: Set image tag
+        id: tag
+        run: |
+          if [ "${{ github.ref_name }}" == "main" ]; then
+            echo "tag=latest" >> $GITHUB_OUTPUT
+          else
+            echo "tag=staging" >> $GITHUB_OUTPUT
+          fi
+
       - name: Build and Push Frontend
         uses: docker/build-push-action@v5
         with:
           context: ./frontend
           push: true
-          tags: pixelopscloud/shopnow-frontend:latest
+          tags: pixelopscloud/shopnow-frontend:${{ steps.tag.outputs.tag }}
+
+  image-scan:
+    runs-on: ubuntu-latest
+    needs: [build-and-push, build-frontend]
+    strategy:
+      matrix:
+        service: [user-service, product-service, order-service, payment-service, notification-service, frontend]
+
+    steps:
+      - name: Set image tag
+        id: tag
+        run: |
+          if [ "${{ github.ref_name }}" == "main" ]; then
+            echo "tag=latest" >> $GITHUB_OUTPUT
+          else
+            echo "tag=staging" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Scan Docker image with Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: pixelopscloud/shopnow-${{ matrix.service }}:${{ steps.tag.outputs.tag }}
+          severity: 'CRITICAL,HIGH'
+          exit-code: '0'
+          format: 'table'
