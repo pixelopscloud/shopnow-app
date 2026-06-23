@@ -24,4 +24,4 @@ app.listen(PORT, () => {
   console.log(`User Service running on port ${PORT}`);
 });
 
-module.exports = app;# test
+module.exports = app; 
