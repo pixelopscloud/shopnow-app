@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { productAPI, orderAPI } from '../services/api';
+import { productAPI } from '../services/api';
 import Navbar from '../components/Navbar';
 
 export default function Home() {
@@ -8,7 +8,10 @@ export default function Home() {
   const [cart, setCart] = useState(JSON.parse(localStorage.getItem('cart') || '[]'));
 
   useEffect(() => {
-    productAPI.get('/api/products').then(res => setProducts(res.data)).catch(console.error);
+    productAPI.get('/api/products').then(res => {
+      const data = Array.isArray(res.data) ? res.data : [];
+      setProducts(data);
+    }).catch(console.error);
   }, []);
 
   const addToCart = (product) => {
@@ -21,7 +24,7 @@ export default function Home() {
     alert('Added to cart!');
   };
 
-  const filtered = products.filter(p => p.name?.toLowerCase().includes(search.toLowerCase()));
+  const filtered = Array.isArray(products) ? products.filter(p => p.name?.toLowerCase().includes(search.toLowerCase())) : [];
 
   return (
     <div>
